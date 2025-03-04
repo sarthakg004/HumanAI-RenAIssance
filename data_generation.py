@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import re
+import shutil
 import matplotlib.pyplot as plt
 from paddleocr import PaddleOCR
 import warnings
@@ -13,8 +14,7 @@ import pandas as pd
 import glob
 from tqdm import tqdm
 from data_utils import (pdf_to_images, process_and_save_images, extract_text_by_page, 
-                        process_bounding_boxes_folder, sanitize_filename, 
-                        resize_and_pad_images,augment_dataset)
+                        process_bounding_boxes_folder,resize_and_pad_images ,augment_dataset)
 
 warnings.filterwarnings("ignore")
 
@@ -115,7 +115,7 @@ class Generate_Dataset():
                     # Execute command
                     os.system(craft_command)
 
-    def align_text(self, transcript_folder, bounding_box_folder, image_folder, output_folder, technique="word"):
+    def align_text(self, transcript_folder, bounding_box_folder, image_folder, output_folder, No_transcript_path,technique="word"):
         # Ensure output folder exists
         os.makedirs(output_folder, exist_ok=True)
         
@@ -142,7 +142,7 @@ class Generate_Dataset():
             if technique == "line":
                 stats = self.process_line_alignment(book_transcript_dir, book_bbox_dir, book_output_dir)
             elif technique == "word":
-                stats = self.process_word_alignment(book_transcript_dir, book_bbox_dir, book_image_dir, book_output_dir)
+                stats = self.process_word_alignment(book,book_transcript_dir, book_bbox_dir, book_image_dir, book_output_dir, No_transcript_path)
             else:
                 raise ValueError(f"Unknown technique: {technique}. Use 'line' or 'word'.")
             
@@ -212,34 +212,31 @@ class Generate_Dataset():
         """Calculate string similarity between two strings"""
         return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
-    def process_word_alignment(self, transcript_dir, bbox_dir, image_dir, output_dir, tesseract_model=1):
+    def process_word_alignment(self, book_folder,transcript_dir, bbox_dir, image_dir, output_dir,No_transcript_path, tesseract_model=1):
         """Process word-level alignment for a single book."""
         stats = {
             'total_pages': 0,
             'total_words': 0,
             'mapped_words': 0,
-            'total_bboxes': 0
+            'total_bboxes': 0,
+            'NO_transcript_pages': 0
         }
         
-        # Find all transcript files
-        transcript_files = [f for f in os.listdir(transcript_dir) if f.startswith("page_") and f.endswith(".txt")]
-        
-        for transcript_file in transcript_files:
-            # Extract page number
-            page_number = transcript_file.split("page_")[1].split(".")[0]
-            
-            # Construct file paths
-            transcript_path = os.path.join(transcript_dir, transcript_file)
+        image_files = [f for f in os.listdir(image_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        for image in image_files:
+            page_number = image.split(".")[0]
+             
+            transcript_path = os.path.join(transcript_dir,f"page_{page_number}.txt")
             bbox_path = os.path.join(bbox_dir, f"{page_number}_sorted.txt")
             image_path = os.path.join(image_dir, f"{page_number}.png")
-            output_path = os.path.join(output_dir, f"{page_number}.txt")
+            output_path = os.path.join(output_dir, f"{page_number}.txt") 
             
-            # Skip if files don't exist
-            if not os.path.exists(bbox_path) or not os.path.exists(image_path):
+            if not os.path.exists(transcript_path):
+                stats['NO_transcript_pages'] += 1
+                os.makedirs(os.path.join(No_transcript_path, book_folder), exist_ok=True)
+                shutil.move(image_path, os.path.join(No_transcript_path, book_folder, image))
                 continue
-            
             try:
-                # Process word-level alignment
                 actual_words, mapped_words, bb_count = self.map_bounding_boxes_to_transcript(
                     image_path, bbox_path, transcript_path, output_path, tesseract_model
                 )
@@ -248,6 +245,7 @@ class Generate_Dataset():
                 stats['mapped_words'] += mapped_words
                 stats['total_bboxes'] += bb_count
                 stats['total_pages'] += 1
+                
                 
             except Exception as e:
                 continue
@@ -438,7 +436,7 @@ class Generate_Dataset():
                     all_results.extend(results)
         
         # Create DataFrame from results
-        df = pd.DataFrame(all_results, columns=['image_name', 'text'])
+        df = pd.DataFrame(all_results, columns=['image_name', 'label'])
         
         return df
 
@@ -450,6 +448,7 @@ class Generate_Dataset():
                 transformed_pages_path="data/PreProcessed/transformed",   ## Path to the folder where the transformed pages will be saved
                 detected_boxes_path="data/PreProcessed/bounding_boxes/craft",  ## Path to the folder where the bounding boxes will be saved
                 aligned_text_path="data/PreProcessed/aligned/craft",        ## Path to the folder where the aligned text will be saved
+                pages_without_transcript_path = "data/PreProcessed/missing_transcripts",
                 cropped_bbox_path="data/Processed/words",      ## Path to the folder where the cropped regions will be saved
                 augmented_bbox_path = "data/Processed/augmented_words",
                 df_path = "data/Processed/words.csv",
@@ -457,7 +456,7 @@ class Generate_Dataset():
                 augmentations_per_image=3
                 ):
         
-        ## Splitting PDFs into pages
+        # Splitting PDFs into pages
         books = sorted(os.listdir(book_path))
         for i, book in enumerate(tqdm(books, desc="Step 1: Splitting PDFs into pages")):
             if book.lower().endswith(".pdf"):
@@ -472,16 +471,9 @@ class Generate_Dataset():
         books = sorted(os.listdir(book_pages_path))
         for i, book in enumerate(tqdm(books, desc="Step 2: Applying transformations to pages")):  
             book_folder = os.path.join(book_pages_path,f"book{i+1}" )
-            if i == 0:
-                crop_odd = {'top': 9.4, 'bottom': 10.5, 'left': 2, 'right': 25.5} 
-                crop_even = {'top': 9.4, 'bottom': 10.2, 'left': 26.8, 'right': 2}
-            elif i == 1:
-                crop_odd = {'top': 10.1, 'bottom': 10, 'left': 2, 'right': 24} 
-                crop_even = {'top': 10.1, 'bottom': 10, 'left': 24, 'right': 2}
-            
             transformed_folder = os.path.join(transformed_pages_path, f"book{i+1}_transformed")
             os.makedirs(transformed_folder, exist_ok=True)
-            process_and_save_images(book_folder, transformed_folder, crop_odd, crop_even)
+            process_and_save_images(book_folder, transformed_folder)
 
         ### Detecting bounding boxes and saving them
         self.save_bounding_boxes(transformed_pages_path, detected_boxes_path)
@@ -509,6 +501,7 @@ class Generate_Dataset():
             bounding_box_folder=detected_boxes_path,
             image_folder=transformed_pages_path,
             output_folder=aligned_text_path,
+            No_transcript_path = pages_without_transcript_path,
             technique="word"
         )
 

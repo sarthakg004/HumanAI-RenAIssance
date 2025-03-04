@@ -11,12 +11,13 @@ if __name__ == "__main__":
                 book_pages_path="data/PreProcessed/book_pages",                
                 transformed_pages_path="data/PreProcessed/transformed",        
                 detected_boxes_path="data/PreProcessed/bounding_boxes/craft",  
-                aligned_text_path="data/PreProcessed/aligned/craft",           
+                aligned_text_path="data/PreProcessed/aligned/craft",     
+                pages_without_transcript_path="data/PreProcessed/missing_transcripts",      
                 cropped_bbox_path="data/Processed/words",                      
                 augmented_bbox_path = "data/Processed/augmented_words",
                 df_path = "data/Processed/words.csv",
                 augmented_df_path="data/Processed/augmented_words.csv",
-                augmentations_per_image=3
+                augmentations_per_image=4
     )
     
     generator.get_train_val_data(path_to_dataframe="data/Processed/augmented_words.csv",

@@ -299,7 +299,7 @@ def text_enhance_for_detection(image):
     
     return enhanced
 
-def process_image_for_text_detection(image_path, output_path=None, resize_height=None, crop_odd=None, crop_even=None):
+def process_image_for_text_detection(image_path, output_path=None, resize_height=None):
     results = {}
     
     # Step 1: Load image
@@ -310,16 +310,9 @@ def process_image_for_text_detection(image_path, output_path=None, resize_height
     gray = convert_to_grayscale(img)
     results['grayscale'] = gray.copy()
     
-    # Step 3: Crop unwanted regions (margins, binding, etc.)
-    if crop_odd and crop_even:
-        cropped = crop_image_percentage(gray, image_path, crop_odd, crop_even)
-        results['cropped'] = cropped.copy()
-    else:
-        cropped = gray
-    
     # Step 4: Process the image at original resolution first
     # Correct skew (straighten text lines)
-    deskewed = correct_skew(cropped)
+    deskewed = correct_skew(gray)
     results['deskewed'] = deskewed.copy()
     
     # Step 5: Correct uneven illumination (common in old books)
@@ -344,15 +337,18 @@ def process_image_for_text_detection(image_path, output_path=None, resize_height
     denoised = denoise_image(denoised, method="weiner")
     denoised = denoise_image(denoised, method="nlm")
     results['denoised2'] = denoised.copy()
+    
     # Step 7: Now resize (if needed) after initial processing for better text preservation
-    if resize_height:
-        processed = resize_image(denoised, height=resize_height)
-        results['resized'] = processed.copy()
-    else:
-        processed = denoised
+    # if resize_height:
+    #     processed = resize_image(denoised, height=resize_height)
+    #     results['resized'] = processed.copy()
+    # else:
+        # processed = denoised
         
-    # binary = binarize_image(processed, method="otsu")
-    # results['binary'] = binary.copy()
+    processed = denoised.copy()
+        
+    binary = binarize_image(processed, method="otsu")
+    results['binary'] = binary.copy()
 
 
     # Step 13: Add padding for OCR safety margin
@@ -365,6 +361,8 @@ def process_image_for_text_detection(image_path, output_path=None, resize_height
         cv2.imwrite(output_path, final)
     
     return results
+
+
 # Visualization function
 def visualize_results(results):
     """Visualizes all the intermediate results."""
@@ -390,9 +388,8 @@ def visualize_results(results):
     plt.show()
 
 
-def process_and_save_images(input_dir, output_dir,crop_odd,crop_even):
+def process_and_save_images(input_dir, output_dir):
     """Processes all images in the input directory and saves them to the output directory."""
-    print("Transforming images for text detection...")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -403,7 +400,7 @@ def process_and_save_images(input_dir, output_dir,crop_odd,crop_even):
         save_path = os.path.join(output_dir, filename)
 
         # Process image
-        processed_image = process_image_for_text_detection(input_path, save_path,resize_height=450,crop_odd=crop_odd,crop_even=crop_even)
+        processed_image = process_image_for_text_detection(input_path, save_path)
 
         # Save final processed image
         cv2.imwrite(save_path, processed_image['final'])
@@ -467,10 +464,6 @@ def extract_text_by_page(docx_file, output_dir):
         else:
             text = remove_punctuation(text)  # Remove punctuation
             current_page.append(text)
-
-    ## As last page contain unnecessary text
-    # if current_page:  # Save last page
-    #     pages.append("\n".join(current_page))
 
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -544,22 +537,7 @@ def process_bounding_boxes_folder(input_folder, output_folder):
             save_sorted_boxes(sorted_boxes, output_path)
 
     # print(f"sorted bounding box saved in '{output_folder}'.")
-    
-    
-def sanitize_filename(text, existing_filenames):
-    """Sanitize text for a valid filename and ensure uniqueness."""
-    filename = text.replace(" ", "_")  # Replace spaces with underscores
-    filename = re.sub(r'[^a-zA-Z0-9_-]', '', filename)  # Remove special characters
 
-    # Ensure uniqueness by appending a counter if filename already exists
-    original_filename = filename
-    counter = 1
-    while filename in existing_filenames:
-        filename = f"{original_filename}_{counter}"
-        counter += 1
-
-    existing_filenames.add(filename)
-    return filename
 
 def find_max_dimensions(image_dir):
     """Finds the maximum width and height of images in a directory and rounds them to the next multiple of 10."""
