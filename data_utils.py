@@ -60,109 +60,98 @@ def pdf_to_images(pdf_path, output_dir):
     
 ##################Image Processing######################
 def load_image(image_path):
-    """Loads an image from a given path."""
-    image = cv2.imread(image_path)
+    image = cv2.imread(image_path)  # Load image (default is BGR)
     if image is None:
         raise ValueError(f"Could not load image from {image_path}")
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
     return image
 
-def convert_to_grayscale(image):
-    """Converts an image to grayscale if it's not already."""
-    if len(image.shape) == 3:  # Check if the image is in color (BGR)
-        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return image  # Already grayscale
+def normalize_image(image):
+    """Normalizes an image to the range [0, 1]."""
+    image = image.astype(np.float32) / 255.0  # Convert to float and normalize
+    return image
 
-def resize_image(image, height=None, width=None):
-    """Resizes image while maintaining aspect ratio if only one dimension is specified.
-    Uses Lanczos interpolation to better preserve text quality."""
-    if height is None and width is None:
-        return image
+def correct_skew(image):
     
-    h, w = image.shape[:2]
-    if height is None:
-        aspect_ratio = width / w
-        height = int(h * aspect_ratio)
-    elif width is None:
-        aspect_ratio = height / h
-        width = int(w * aspect_ratio)
-    
-    # Use Lanczos interpolation for higher quality resizing when upscaling
-    # Use INTER_AREA for downscaling
-    if height > h or width > w:
-        return cv2.resize(image, (width, height), interpolation=cv2.INTER_LANCZOS4)
+    # Ensure image is uint8
+    if image.max() <= 1:
+        image = (image * 255).astype(np.uint8)
+
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:  # If RGB, convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     else:
-        return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        gray = image
+        
+        
+    """Corrects image skew by detecting and straightening text lines."""
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
 
-def crop_image_percentage(image, image_path, crop_odd, crop_even):
-    """Crops image based on percentages provided, different for odd/even pages."""
+    # Find contours
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        print("No text found, skipping skew correction.")
+        return gray  # Return original image with 0° skew angle
+
+    # Find the largest contour (assumed to be text block)
+    largest_contour = max(contours, key=cv2.contourArea)
+    
+    # Get the minimum area bounding box
+    rect = cv2.minAreaRect(largest_contour)
+    angle = rect[-1]
+
+    # Normalize the angle to be between -45° and +45°
+    if angle < -45:
+        angle += 90
+    elif angle > 45:
+        angle -= 90
+
+    # Get image dimensions and center
+    (h, w) = gray.shape[:2]
+    center = (w // 2, h // 2)
+
+    # Compute rotation matrix
+    rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    # Perform the rotation with border replication
+    deskewed = cv2.warpAffine(image, rotation_matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return deskewed
+
+from PIL import Image
+import numpy as np
+import cv2
+
+def ensure_300ppi(image, target_dpi=300):
+
+    # Convert OpenCV image (NumPy array) to Pillow Image
     height, width = image.shape[:2]
 
-    # Determine if the page is odd or even based on filename
-    filename = os.path.basename(image_path)
-    page_number_match = re.search(r'\d+', filename)
-    
-    if page_number_match:
-        page_number = int(page_number_match.group())
-        is_odd = page_number % 2 == 1
-    else:
-        print(f"Warning: Could not determine page number for {filename}, using odd-page cropping by default.")
-        is_odd = True
+    # Assume A4 document size in inches (common for scanned books)
+    a4_width = 8.27  # inches
+    a4_height = 11.69  # inches
 
-    # Select cropping values
-    crop_values = crop_odd if is_odd else crop_even
+    dpi_x = width / a4_width
+    dpi_y = height / a4_height
+    
+    image_pil = Image.fromarray(image)
 
-    # Convert percentage to absolute pixels
-    top = int(height * crop_values['top'] / 100)
-    bottom = int(height * crop_values['bottom'] / 100)
-    left = int(width * crop_values['left'] / 100)
-    right = int(width * crop_values['right'] / 100)
+    if dpi_x < target_dpi or dpi_y < target_dpi:
+        # Calculate upscale factor
+        scale_factor = target_dpi / min(dpi_x,dpi_y)  # Scale based on the lower DPI
 
-    # Compute cropping bounds
-    bottom = height - bottom if bottom > 0 else height
-    right = width - right if right > 0 else width
+        # Compute new size
+        new_size = (int(image_pil.width * scale_factor), int(image_pil.height * scale_factor))
 
-    # Crop the image
-    cropped = image[top:bottom, left:right]
-    
-    return cropped
+        # Resize using high-quality Lanczos resampling
+        image_pil = image_pil.resize(new_size, Image.Resampling.LANCZOS)
 
-def correct_illumination(image):
-    """Corrects uneven illumination using background subtraction."""
-    # Create a morphological kernel for background estimation
-    kernel_size = max(3, min(image.shape) // 30)
-    kernel_size = kernel_size + 1 if kernel_size % 2 == 0 else kernel_size  # Ensure odd kernel size
-    
-    # Estimate background
-    background = cv2.morphologyEx(image, cv2.MORPH_DILATE, 
-                                 np.ones((kernel_size, kernel_size), np.uint8))
-    background = cv2.GaussianBlur(background, (kernel_size, kernel_size), 0)
-    
-    # Subtract background and normalize
-    diff_img = cv2.subtract(255, cv2.subtract(background, image))
-    
-    # Apply normalization to enhance contrast
-    norm_img = cv2.normalize(diff_img, None, alpha=0, beta=255, 
-                            norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
-    
-    return norm_img
+        # Set the new DPI metadata
+        image_pil.info['dpi'] = (target_dpi, target_dpi)
 
-def enhance_contrast(image, method="clahe"):
-    """Enhances contrast using various methods."""
-    if method == "clahe":
-        # CLAHE is good for localized contrast enhancement
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        return clahe.apply(image)
-    elif method == "adaptive_eq":
-        # Adaptive histogram equalization
-        result = exposure.equalize_adapthist(image, clip_limit=0.03) * 255
-        return result.astype(np.uint8)
-    elif method == "stretch":
-        # Contrast stretching
-        p2, p98 = np.percentile(image, (2, 98))
-        result = exposure.rescale_intensity(image, in_range=(p2, p98), out_range=(0, 255))
-        return result.astype(np.uint8)
-    
-    return image
+    # Convert back to OpenCV format
+    image_upscaled = np.array(image_pil)
+
+    return image_upscaled
 
 def denoise_image(image, method="nlm"):
     """Applies different denoising methods."""
@@ -172,8 +161,12 @@ def denoise_image(image, method="nlm"):
         # Bilateral filter preserves edges better
         return cv2.bilateralFilter(image, 9, 75, 75)
     elif method == "nlm":
-        # Non-local means denoising - good for preserving text details
-        return cv2.fastNlMeansDenoising(image, None, 10, 7, 21)
+        if len(image.shape) == 3 and image.shape[2] == 3:
+            # Denoise color image
+            return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 15)
+        else:
+            # Denoise grayscale image
+            return cv2.fastNlMeansDenoising(image, None, 10, 7, 21)
     elif method == "wiener":
         # Wiener filter for restoration
         result = restoration.wiener(image, psf=np.ones((3, 3)) / 9)
@@ -184,36 +177,6 @@ def denoise_image(image, method="nlm"):
         return (result * 255).astype(np.uint8)
     
     return image
-
-def sharpen_image(image, method="unsharp"):
-    """Sharpens an image using various methods."""
-    if method == "unsharp":
-        # Unsharp masking
-        result = unsharp_mask(image, radius=1.5, amount=1.8, preserve_range=True)
-        return result.astype(np.uint8)
-    elif method == "laplacian":
-        # Laplacian sharpening
-        laplacian = cv2.Laplacian(image, cv2.CV_8U)
-        return cv2.add(image, laplacian)
-    elif method == "custom":
-        # Custom sharpening kernel
-        kernel = np.array([[0,-2,0], 
-                          [-2, 9,-2],
-                          [0,-2,0]])
-        return cv2.filter2D(image, -1, kernel)
-    
-    return image
-
-def binarize_image(image, method="otsu"):
-    """Binarizes the image using various methods."""
-    if method == "otsu":
-        # Otsu's method for global thresholding
-        _, binary = cv2.threshold(image, 0, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    elif method == "adaptive":
-        # Adaptive thresholding - good for uneven illumination
-        binary = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                      cv2.THRESH_BINARY, 15, 8)
-    return binary
 
 def morphological_operations(image, operation, kernel_size=(2, 2), iterations=1):
     """Performs morphological operations with configurable kernel size and iterations."""
@@ -236,41 +199,81 @@ def morphological_operations(image, operation, kernel_size=(2, 2), iterations=1)
     
     return image
 
-def correct_skew(image):
-    """Corrects image skew by detecting and straightening text lines."""
-    _, binary = cv2.threshold(image, 0, 255, cv2.THRESH_OTSU)
+def convert_to_grayscale(image):
+    """Converts an image to grayscale if it's not already."""
+    if len(image.shape) == 3:  # Check if the image is in color (BGR)
+        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return image  # Already grayscale
 
-    # Find contours
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    if not contours:
-        print("No text found, skipping skew correction.")
-        return image  # Return original image with 0° skew angle
-
-    # Find the largest contour (assumed to be text block)
-    largest_contour = max(contours, key=cv2.contourArea)
+def sharpen_image(image, method="unsharp"):
+    """Sharpens an image using various methods."""
+    if method == "unsharp":
+        # Unsharp masking
+        result = unsharp_mask(image, radius=1.5, amount=1.8, preserve_range=True)
+        return result.astype(np.uint8)
+    elif method == "laplacian":
+        # Laplacian sharpening
+        laplacian = cv2.Laplacian(image, cv2.CV_8U)
+        return cv2.add(image, laplacian)
+    elif method == "custom":
+        # Custom sharpening kernel
+        kernel = np.array([[0,-2,0], 
+                          [-2, 9,-2],
+                          [0,-2,0]])
+        return cv2.filter2D(image, -1, kernel)
     
-    # Get the minimum area bounding box
-    rect = cv2.minAreaRect(largest_contour)
-    angle = rect[-1]
+    return image
 
-    # Normalize the angle to be between -45° and +45°
-    if angle < -45:
-        angle += 90
-    elif angle > 45:
-        angle -= 90
+def enhance_contrast(image, method="clahe"):
+    """Enhances contrast using various methods."""
+    if method == "clahe":
+        # CLAHE is good for localized contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        return clahe.apply(image)
+    elif method == "adaptive_eq":
+        # Adaptive histogram equalization
+        result = exposure.equalize_adapthist(image, clip_limit=0.03) * 255
+        return result.astype(np.uint8)
+    elif method == "stretch":
+        # Contrast stretching
+        p2, p98 = np.percentile(image, (2, 98))
+        result = exposure.rescale_intensity(image, in_range=(p2, p98), out_range=(0, 255))
+        return result.astype(np.uint8)
+    
+    return image
 
-    # Get image dimensions and center
-    (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
+def correct_illumination(image):
+    """Corrects uneven illumination using background subtraction."""
+    # Create a morphological kernel for background estimation
+    kernel_size = max(3, min(image.shape) // 30)
+    kernel_size = kernel_size + 1 if kernel_size % 2 == 0 else kernel_size  # Ensure odd kernel size
+    
+    # Estimate background
+    background = cv2.morphologyEx(image, cv2.MORPH_DILATE, 
+                                 np.ones((kernel_size, kernel_size), np.uint8))
+    background = cv2.GaussianBlur(background, (kernel_size, kernel_size), 0)
+    
+    # Subtract background and normalize
+    diff_img = cv2.subtract(255, cv2.subtract(background, image))
+    
+    # Apply normalization to enhance contrast
+    norm_img = cv2.normalize(diff_img, None, alpha=0, beta=255, 
+                            norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
+    
+    return norm_img
 
-    # Compute rotation matrix
-    rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-    # Perform the rotation with border replication
-    deskewed = cv2.warpAffine(image, rotation_matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return deskewed
+def binarize_image(image, method="otsu"):
+    """Binarizes the image using various methods."""
+    if method == "otsu":
+        # Otsu's method for global thresholding
+        _, binary = cv2.threshold(image, 0, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    elif method == "adaptive":
+        # Adaptive thresholding - good for uneven illumination
+        binary = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                      cv2.THRESH_BINARY, 15, 8)
+    return binary
 
-def add_fixed_padding(image, padding=(20, 20, 20, 20), padding_value=255):
+def add_fixed_padding(image, padding=(20, 20, 20, 20), padding_value=0):
     """Adds fixed padding to the image."""
     top, bottom, left, right = padding
     if len(image.shape) == 3:
@@ -281,87 +284,53 @@ def add_fixed_padding(image, padding=(20, 20, 20, 20), padding_value=255):
                                           cv2.BORDER_CONSTANT, value=padding_value)
     return padded_image
 
-def text_enhance_for_detection(image):
-    """Special text enhancement for better text detection and OCR."""
-    # Create a copy of the image to work with
-    enhanced = image.copy()
-    
-    # Apply edge-preserving bilateral filter
-    enhanced = cv2.bilateralFilter(enhanced, 5, 75, 75)
-    
-    # Apply local contrast enhancement
-    clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(8,8))
-    enhanced = clahe.apply(enhanced)
-    
-    # Apply unsharp masking to enhance edges (text)
-    blur = cv2.GaussianBlur(enhanced, (0, 0), 3)
-    enhanced = cv2.addWeighted(enhanced, 1.5, blur, -0.5, 0)
-    
-    return enhanced
-
-def process_image_for_text_detection(image_path, output_path=None, resize_height=None):
+def process_image_for_text_detection(image_path, output_path=None):
     results = {}
-    
-    # Step 1: Load image
-    img = load_image(image_path)
-    results['original'] = img.copy()
-    
-    # Step 2: Convert to grayscale first (for better processing)
-    gray = convert_to_grayscale(img)
-    results['grayscale'] = gray.copy()
-    
-    # Step 4: Process the image at original resolution first
-    # Correct skew (straighten text lines)
-    deskewed = correct_skew(gray)
-    results['deskewed'] = deskewed.copy()
-    
-    # Step 5: Correct uneven illumination (common in old books)
-    illumination_corrected = correct_illumination(deskewed)
-    results['illumination_corrected'] = illumination_corrected.copy()
-    
-    # Step 8: Continue with denoising'
-    denoised = denoise_image(illumination_corrected, method="weiner")
-    denoised = denoise_image(denoised, method="weiner")
-    results['denoised'] = denoised.copy()
-    
-    morph = morphological_operations(denoised, "close", kernel_size=(1,1), iterations=2)
-    results['morph_closed'] = morph.copy()
+        
+    image  = load_image(image_path) 
 
-        # Step 6: Apply specific text enhancement for detection
-    text_enhanced = enhance_contrast(morph)
-    results['text_enhanced'] = text_enhanced.copy()
-    
-    
-    denoised = denoise_image(text_enhanced, method="weiner")
-    denoised = denoise_image(denoised, method="weiner")
-    denoised = denoise_image(denoised, method="weiner")
+    normalized = normalize_image(image)
+    results['original'] = normalized.copy() 
+
+    deskewed = correct_skew(normalized)
+    results['deskewed'] = deskewed.copy() 
+
+    scaled = ensure_300ppi(deskewed)
+    results['scaled'] = scaled.copy() 
+
+    denoised = denoise_image(scaled, method="bilateral")
     denoised = denoise_image(denoised, method="nlm")
-    results['denoised2'] = denoised.copy()
+    denoised = denoise_image(denoised, method="weiner")
+    results['denoised'] = denoised.copy() 
+
+    morph = morphological_operations(denoised, operation="erode", kernel_size=(5,5), iterations=1)
+    results['eroded'] = morph.copy() 
+
+    gray = convert_to_grayscale(morph)
+    results['gray'] = gray.copy() 
     
-    # Step 7: Now resize (if needed) after initial processing for better text preservation
-    # if resize_height:
-    #     processed = resize_image(denoised, height=resize_height)
-    #     results['resized'] = processed.copy()
-    # else:
-        # processed = denoised
-        
-    processed = denoised.copy()
-        
-    binary = binarize_image(processed, method="otsu")
-    results['binary'] = binary.copy()
+    sharpened = sharpen_image(gray, method="laplacian")
+    results['sharpened'] = sharpened.copy()
+    
+    enhanced = enhance_contrast(sharpened, method="clahe")
+    results['enhanced'] = enhanced.copy() 
+    
+    corrected = correct_illumination(enhanced)
+    results['corrected'] = corrected.copy()
 
+    binary = binarize_image(corrected, method="otsu")
+    results['binary'] =  binary.copy() 
 
-    # Step 13: Add padding for OCR safety margin
-    final = add_fixed_padding(processed, padding=(2,2,2,2), padding_value=255)
-    final = add_fixed_padding(final, padding=(3,3,3,3), padding_value=0)
-    results['final'] = final
+    # Adding Padding
+    final = add_fixed_padding(binary, padding=(2,2,2,2), padding_value=255)
+    final = add_fixed_padding(final, padding=(8,8,8,8), padding_value=0)
+    results['final'] = final.copy()
     
     # Save result if output path is provided
     if output_path:
         cv2.imwrite(output_path, final)
     
     return results
-
 
 # Visualization function
 def visualize_results(results):
@@ -376,8 +345,8 @@ def visualize_results(results):
         else:
             ax = axes[row, col]
             
-        if key == 'original' and len(img.shape) == 3:
-            ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        if len(img.shape) == 3:
+            ax.imshow(img)
         else:
             ax.imshow(img, cmap='gray')
             
@@ -386,8 +355,7 @@ def visualize_results(results):
     
     plt.tight_layout()
     plt.show()
-
-
+    
 def process_and_save_images(input_dir, output_dir):
     """Processes all images in the input directory and saves them to the output directory."""
     if not os.path.exists(output_dir):
@@ -404,7 +372,8 @@ def process_and_save_images(input_dir, output_dir):
 
         # Save final processed image
         cv2.imwrite(save_path, processed_image['final'])
-    
+###########################################################################################################  
+
 def load_bounding_boxes(txt_path):
     """Reads the bounding box coordinates from CRAFT output .txt file."""
     boxes = []

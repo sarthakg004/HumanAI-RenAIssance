@@ -3,3 +3,5 @@ CRAFT-pytorch
 detection_model
 models
 app.py
+.venv
+detectron2

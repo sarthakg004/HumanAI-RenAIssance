@@ -234,7 +234,7 @@ class Generate_Dataset():
             if not os.path.exists(transcript_path):
                 stats['NO_transcript_pages'] += 1
                 os.makedirs(os.path.join(No_transcript_path, book_folder), exist_ok=True)
-                shutil.move(image_path, os.path.join(No_transcript_path, book_folder, image))
+                shutil.copy(image_path, os.path.join(No_transcript_path, book_folder, image))
                 continue
             try:
                 actual_words, mapped_words, bb_count = self.map_bounding_boxes_to_transcript(
