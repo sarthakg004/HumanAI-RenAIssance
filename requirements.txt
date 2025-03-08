@@ -20,4 +20,4 @@ tqdm==4.67.1
 
 
 # pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 
-# pip install  pandas  matplotlib PyMuPDF opencv-python scikit-learn scikit-image pytesseract paddleocr paddlepaddle-gpu pillow tqdm transformers datasets ipywidgets jupyter torchinfo
+# pip install  pandas  matplotlib PyMuPDF opencv-python scikit-learn scikit-image pytesseract paddleocr paddlepaddle-gpu pillow tqdm transformers datasets ipywidgets jupyter torchinfo supervision ultralytics
