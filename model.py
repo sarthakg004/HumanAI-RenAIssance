@@ -31,6 +31,7 @@ n_classes = len(unique_chars)
 print(f"Total number of unique characters : {n_classes}")
 print(f"Unique Characters : \n{unique_chars}")
 
+
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -44,6 +45,7 @@ char_to_idx = {c: i+1 for i, c in enumerate(characters)}  # Start index from 1 (
 char_to_idx['<blank>'] = 0  # Blank character
 idx_to_char = {i+1: c for i, c in enumerate(characters)}
 idx_to_char[0] = '<blank>'  # Blank character
+
 NUM_CLASSES = len(characters) + 1  # Extra for blank
 
 
@@ -54,11 +56,10 @@ import numpy as np
 import os
 
 class OCRDataset(Dataset):
-    def __init__(self, dataframe, img_dir, char_to_idx, idx_to_char, transform=None, height=128):
+    def __init__(self, dataframe, img_dir, char_to_idx, idx_to_char, height=128):
 
         self.dataframe = dataframe
         self.img_dir = img_dir
-        self.transform = transform
         self.height = height
         
         # Character to index mapping
@@ -96,9 +97,6 @@ class OCRDataset(Dataset):
         label_indices = [self.char_to_idx[c] for c in label]
         label_tensor = torch.tensor(label_indices, dtype=torch.long)
         
-        if self.transform:
-            image_tensor = self.transform(image_tensor)
-        
         return {
             'image': image_tensor,
             'label': label_tensor,
@@ -109,7 +107,6 @@ class OCRDataset(Dataset):
     def get_vocab_size(self):
         return len(self.char_to_idx)
     
-
 import torch
 import torch.nn.functional as F
 
@@ -172,21 +169,20 @@ def collate_fn(batch):
         'texts': texts
     }
     
-    
 # DataLoaders
 train_dataset = OCRDataset(train_df, IMAGE_DIR,char_to_idx, idx_to_char, height=128)
 val_dataset = OCRDataset(val_df, IMAGE_DIR, char_to_idx, idx_to_char, height=128)
 
 train_loader = DataLoader(
     train_dataset, 
-    batch_size=32, 
+    batch_size=16, 
     shuffle=True, 
     collate_fn=collate_fn,
     pin_memory=True
 )
 val_loader = DataLoader(
     val_dataset, 
-    batch_size=32, 
+    batch_size=16, 
     shuffle=False, 
     collate_fn=collate_fn,
     pin_memory=True
@@ -234,9 +230,9 @@ class CRNN(nn.Module):
         x = self.fc(x)
         
         return x  # (batch, seq_len, num_classes)
- 
- 
- # Decode predictions (greedy decoding)
+    
+    
+# Decode predictions (greedy decoding)
 def decode_predictions(predictions):
     # Simple greedy decoding
     decoded_preds = []
@@ -288,34 +284,6 @@ def levenshtein_distance(s1, s2):
     
     return previous_row[-1]
 
-
-# Early stopping class
-class EarlyStopping:
-    def __init__(self, patience=5, min_delta=0.0, path='models/'):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.path = path
-        self.counter = 0
-        self.best_score = None
-        self.early_stop = False
-        
-    def __call__(self, val_loss, model):
-        if self.best_score is None:
-            self.best_score = val_loss
-            self.save_checkpoint(model)
-        elif val_loss > self.best_score + self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.early_stop = True
-        else:
-            self.best_score = val_loss
-            self.save_checkpoint(model)
-            self.counter = 0
-            
-    def save_checkpoint(self, model):
-        torch.save(model.state_dict(), self.path)
-        
-        
 def validate(model, val_loader, criterion):
     model.eval()
     val_loss = 0
@@ -476,10 +444,10 @@ scheduler = ReduceLROnPlateau(
     patience=3
 )
 
-
 # Set hyperparameters
 NUM_EPOCHS = 100
 PATIENCE = 5
+MIN_DELTA = 0.001
 CHECKPOINT_DIR = 'models/'
 
 # Train the model
@@ -492,13 +460,12 @@ history = train(
     scheduler=scheduler,
     num_epochs=NUM_EPOCHS,
     patience=PATIENCE,
+    min_delta=MIN_DELTA,
     checkpoint_dir=CHECKPOINT_DIR
 )
 
-
-    
 trained_model = CRNN(NUM_CLASSES).to(device)
-trained_model.load_state_dict(torch.load('models/best_accuracy_model.pth')['model_state_dict'])
+trained_model.load_state_dict(torch.load('models/best_model.pth')['model_state_dict'])
 
 
 def plot_training_metrics(history):
@@ -542,7 +509,7 @@ def plot_training_metrics(history):
     
     plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to make room for the title
     plt.savefig('images/training_metrics.png', dpi=300, bbox_inches='tight')
-    plt.show()
+
 
 def predict_and_visualize_random(model, data_loader, idx_to_char, device, num_samples=10, save_path=None, seed=None):
 
@@ -643,8 +610,7 @@ def predict_and_visualize_random(model, data_loader, idx_to_char, device, num_sa
     
     if save_path:
         plt.savefig(save_path, dpi=200, bbox_inches='tight')
-    
-    plt.show()
+
 
 def decode_single_prediction(prediction, idx_to_char):
     """
@@ -676,7 +642,7 @@ predict_and_visualize_random(
     idx_to_char=idx_to_char,
     device=device,
     num_samples=20,
-    save_path='random_predictions.png',
+    save_path='images/predictions.png',
     seed=2  # For reproducible results
 )
 
