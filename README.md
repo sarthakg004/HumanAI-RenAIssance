@@ -43,7 +43,11 @@ Buendia - Instruccion.pdf : book8
 - For the purpose of layout detection I experimented with 2 different pretrained models, the **YOLOv11** and the **Paddle DocLayout** model. Although both the model gave errors in predicting the layout i decided to procede with
   the Paddle DocLayout model. ( the performance can be improved by fine tuning these models but will require annotated data)
 
+<<<<<<< HEAD
   <img src="images\layout_paddle.png" alt="layout detection example" width="400" height="500">
+=======
+  <img src="images\layout_paddle2.png" alt="layout detection example" width="400" height="500">  <img src="images\layout_paddle.png" alt="layout detection example" width="400" height="500">
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 
   - For text detection I used two different models. The DBNET+ model and the CRAFT model. CRAFT was able to produce word level bounding boxes.
     
@@ -71,6 +75,7 @@ I have used pytorch for training a CRNN model.
 - I created a vocabulary from the labels ( all the unique character available in our label or transcripts).
   
 ```bash
+<<<<<<< HEAD
 Total number of unique characters before : 61
 Unique Characters : 
 {'s', 'l', 'e', 'v', 'x', 'G', 'X', 'I', 'h', 'H', 'r', 'í', 't', 'n', 'q',
@@ -78,6 +83,13 @@ Unique Characters :
   'a', 'U', 'D', 'p', 'K', 'V', 'd', 'S', 'R', 'ó', '6', 'i', '7', 'm', 'E',
    'P', 'z', 'L', '1', 'j', 'f', 'F', 'Z', 'C', 'T', 'u', 'Q', 'o', 'c', 'A',
     'y'}
+=======
+Total number of unique characters before : 62
+Unique Characters : 
+{'h', 't', 'p', 'V', 'Y', 'g', 'a', 'C', 'x', 'd', 'b', 'z', 'j', 'l', 'K', 'm', 'n', '6', 'H', 'u', 'T', 'y',
+ 'r', 'L', 'M', '9', 'ó', 'O', 'o', 'F', 'R', 'v', 'Q', 'á', '2', '1', 's','8', 'f', 'c', 'P', 'Z', 'S', 'A',
+ 'q', 'i', 'B', 'I', 'E', 'N', 'G', 'X', 'ë', 'í', 'D', 'e', 'é', 'U', 'Ñ', 'ñ', '5', 'J'}
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 ```
 
 - Based on the noted provided in the transcript files, I have modified our vocabulary using a rule based approach.
@@ -85,18 +97,29 @@ Unique Characters :
 ```bash
 Total number of unique characters after normalization: 31
 Normalized unique characters: 
+<<<<<<< HEAD
 {'s', 'l', 'e', 'x', 'h', 'r', 't', 'n', 'q', '9', '2', '5',
  'ñ', 'g', 'b', 'a', 'p', 'd', '7', '6', 'i', 'm', 'z', '1', 'j',
   'f', 'u', 'o', 'k', 'c', 'y'}
+=======
+{'h', 't', 'p', 'g', 'a', 'x', 'd', 'b', 'z', 'j', 'l', 'm', 'n', '6', 'u', 'y', 'r', '9', 'o', '1', '2',
+'s', '8', 'f', 'c', 'k', 'q', 'i', 'e', 'ñ', '5'}
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
   ```
 
 - Created a character-to-idx and idx-to-character mapping for our generated vocabulary.
 
 ```bash
+<<<<<<< HEAD
 Character to index mapping: {'1': 1, '2': 2, '5': 3, '6': 4, '7': 5, '9': 6, 'a':7,
  'b': 8, 'c': 9, 'd': 10, 'e': 11, 'f': 12, 'g': 13, 'h': 14, 'i': 15, 'j': 16,
   'k': 17, 'l': 18, 'm': 19, 'n': 20, 'o': 21, 'p': 22, 'q': 23, 'r': 24, 's': 25,
   't': 26, 'u': 27, 'x': 28, 'y': 29, 'z': 30, 'ñ': 31, '<blank>': 0}
+=======
+Character to index mapping: {'1': 1, '2': 2, '5': 3, '6': 4, '8': 5, '9': 6, 'a': 7, 'b': 8, 'c': 9, 'd': 10, 'e': 11, 'f': 12, 'g': 13,
+ 'h': 14, 'i': 15, 'j': 16, 'k': 17, 'l': 18, 'm': 19, 'n': 20, 'o': 21, 'p': 22, 'q': 23, 'r': 24, 's': 25, 't': 26, 'u': 27, 'x': 28,
+'y': 29, 'z': 30, 'ñ': 31, '<blank>': 0}
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 Number of classes (including blank): 32
 ```
 
@@ -127,6 +150,11 @@ Why is this beneficial?
 
 ### Defining Model Architecture
   
+<<<<<<< HEAD
+=======
+### Defining Model Architecture
+  
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 ```mermaid
 flowchart TB
     classDef convblock fill:#faf88e,stroke:#333,stroke-width:1px
@@ -180,6 +208,7 @@ flowchart TB
     class reshape reshapeblock
     class attention fcblock
 ```
+<<<<<<< HEAD
 lets assume that our input image has a dimension (3,w,h). The image will be processed through our model accoringly:
 
 ```bash
@@ -239,6 +268,12 @@ Prediction: "HHH--EEELLL--OO" → "HELLO"
 
 
 our model outputs (batch, w/16, Vocabulary Size) so we have w/16 predictions for each image. so for each image CTC computes the probability of all valid alignments across the w/16 timesteps. **The loss is the negative log of the sum of these probabilities**
+=======
+
+### Loss Function Used(CTC LOSS)
+
+
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 
 ### Results
 
@@ -246,18 +281,29 @@ I also trained the model without applying the preprocessing step to check how mu
 
 | Metric      | Without Preprocessing | With Preprocessing |
 |------------|----------------------|-------------------|
+<<<<<<< HEAD
 | Train Loss | 0.0211              | 0.0155           |
 | Val Loss   | 0.0618              | 0.0486           |
 | Accuracy   | 0.9521              | 0.9596           |
 | CER        | 0.0160              | 0.0131           |
 
 During training(with preprocessing) the accuracy reached till 0.965 and can be further improved by fine tuning the early stopping patience.
+=======
+| Train Loss | 0.0621               | 0.0478           |
+| Val Loss   | 0.1983               | 0.1526           |
+| Accuracy   | 0.8642               | 0.8950           |
+| CER        | 0.0527               | 0.0384           |
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 
 <img src="images\training_metrics.png" alt="training metrics" width="1000" height="070">
 
 <img src="images\predictions.png" alt="prediction with preprocessing" width="1400" height="400">
 
+<<<<<<< HEAD
 the details of the training can be found in `/models` folder [here](https://iitbhu365-my.sharepoint.com/:f:/g/personal/saarthak_gupta_mec22_iitbhu365_onmicrosoft_com/EmmfM8DCrjlIr9iSP_KBMu0BbnYZ2szhd7zWK2mjeF8skQ?e=cuNL2A).
+=======
+the details of the training can be found in `/models` folder.
+>>>>>>> 3d528bb66b9a4757385a580e2094f5b9a2993cba
 
 ### Testing
 Now finally I used the trained model to generate transcripts for the testing pages.(These are the page of the book for which no transcripts were provided).
