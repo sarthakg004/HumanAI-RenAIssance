@@ -181,7 +181,7 @@ packaging==24.2
 paddle-bfloat==0.1.7
 paddleocr==2.7.3
 paddlepaddle-gpu==3.0.0rc0
-paddlex @ https://paddle-model-ecology.bj.bcebos.com/paddlex/whl/paddlex-3.0.0rc0-py3-none-any.whl#sha256=ec04b71cb7ffc348f2d116ccb169f276d6a752b94be20bf366c5d4ea84bc1776
+paddlex
 pandas==2.2.3
 pandocfilters==1.5.1
 Parsley==1.3
